@@ -24,7 +24,7 @@ function getGeminiClient() {
     apiKey: apiKey || '',
     httpOptions: {
       headers: {
-        'User-Agent': 'aistudio-build',
+        'User-Agent': 'MatricMateAI',
       },
     },
   });
