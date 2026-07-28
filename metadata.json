@@ -1,0 +1,6 @@
+{
+  "name": "MatricMate",
+  "description": "AI Study Planner and Exam Revision Companion for Matric Students (Grade 9–10)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
