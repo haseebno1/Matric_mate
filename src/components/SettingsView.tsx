@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserProfile, SubjectConfig } from '../types';
 import { MATRIC_SUBJECTS } from '../data/subjectsData';
+import { setClientApiKey, getClientApiKey } from '../lib/clientAI';
 import { 
   Settings, 
   User, 
@@ -10,7 +11,9 @@ import {
   RotateCcw, 
   CheckCircle2, 
   Calendar,
-  Sliders
+  Sliders,
+  Key,
+  Sparkles
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -31,6 +34,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [email, setEmail] = useState(profile.email || '');
   const [phone, setPhone] = useState(profile.phone || '');
   const [dailyHours, setDailyHours] = useState(profile.dailyStudyHours || 3);
+  const [apiKey, setApiKey] = useState(getClientApiKey(profile.apiKey) || '');
 
   // Notification states
   const [studyReminders, setStudyReminders] = useState(true);
@@ -40,6 +44,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const handleSave = () => {
+    setClientApiKey(apiKey);
     const updated: UserProfile = {
       ...profile,
       name,
@@ -47,6 +52,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       email,
       phone,
       dailyStudyHours: dailyHours,
+      apiKey: apiKey.trim(),
     };
     onSaveProfile(updated);
     setSavedSuccess(true);
@@ -140,6 +146,51 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             onChange={(e) => setDailyHours(Number(e.target.value))}
             className="w-full accent-indigo-600 cursor-pointer"
           />
+        </div>
+      </div>
+
+      {/* AI & Standalone API Key Configuration */}
+      <div className="p-6 bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-3xl shadow-sm space-y-4 border border-indigo-800">
+        <div className="flex items-center justify-between border-b border-indigo-800/80 pb-3">
+          <h3 className="font-bold text-sm text-white flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span>Gemini AI & Static Hosting Configuration (Netlify / Vercel)</span>
+          </h3>
+          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+            Live AI Integration
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-300 leading-relaxed">
+          When deployed to static hosts like Netlify, Vercel, or GitHub Pages without a Node server backend, you can provide a Gemini API key here or via the <code className="px-1.5 py-0.5 bg-slate-800 rounded text-amber-300">VITE_GEMINI_API_KEY</code> environment variable to enable live Gemini 2.5 Flash scheduling, tutor Q&amp;A, and quiz generation.
+        </p>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-200 mb-1 flex items-center gap-1.5">
+            <Key className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Google Gemini API Key</span>
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              placeholder="AIzaSy..."
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              className="flex-1 px-3.5 py-2 bg-slate-800/80 border border-indigo-700/60 rounded-xl text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-amber-400"
+            />
+            {apiKey && (
+              <button
+                type="button"
+                onClick={() => setApiKey('')}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl font-medium border border-slate-700 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1.5">
+            Key is stored locally in browser storage. Leave empty to use fallback intelligent engines or backend proxy.
+          </p>
         </div>
       </div>
 

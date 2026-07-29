@@ -23,6 +23,7 @@ import {
   generateFallbackSchedule,
   generateFallbackBuddyReply,
 } from './lib/fallbackAI';
+import { generateScheduleAI, chatBuddyAI } from './lib/clientAI';
 
 export default function App() {
   const [profile, setProfile] = useState<UserProfile>(loadProfile);
@@ -92,11 +93,11 @@ export default function App() {
           return;
         }
       }
-      throw new Error('Fallback to local schedule generator');
+      throw new Error('Server API unavailable, trying client AI');
     } catch (e) {
-      console.warn('Using local fallback schedule generator:', e);
-      const fallback = generateFallbackSchedule(updatedProfile.subjects, updatedProfile.dailyStudyHours || 3);
-      setSessions(fallback);
+      console.warn('Backend endpoint unavailable, attempting client Gemini API / fallback:', e);
+      const schedule = await generateScheduleAI(updatedProfile.subjects, updatedProfile.dailyStudyHours || 3, updatedProfile.apiKey);
+      setSessions(schedule);
     }
   };
 
@@ -213,14 +214,14 @@ export default function App() {
           return;
         }
       }
-      throw new Error('Using fallback reply');
+      throw new Error('Using client AI reply');
     } catch (e) {
-      console.warn('Chat API error, using fallback:', e);
-      const fallbackText = generateFallbackBuddyReply(question, subDef?.name || subjectId, topic);
+      console.warn('Chat API unavailable, attempting client Gemini API / fallback:', e);
+      const aiReply = await chatBuddyAI(question, subDef?.name || subjectId, topic, profile.apiKey);
       const assistantMsg: ChatMessage = {
         id: `c-ai-${Date.now()}`,
         role: 'assistant',
-        text: fallbackText,
+        text: aiReply,
         subjectId,
         topic,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),

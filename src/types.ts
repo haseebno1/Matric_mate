@@ -17,6 +17,7 @@ export interface UserProfile {
   streakDays: number;
   lastActiveDate: string; // YYYY-MM-DD
   badgesEarned: string[]; // Badge IDs
+  apiKey?: string; // Optional Gemini API key for static standalone hosting (Netlify/Vercel)
 }
 
 export interface StudySession {

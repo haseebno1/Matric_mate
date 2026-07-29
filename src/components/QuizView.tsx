@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { QuizQuestion, QuizResult, UserProfile, StudySession } from '../types';
 import { MATRIC_SUBJECTS } from '../data/subjectsData';
 import { generateFallbackQuiz } from '../lib/fallbackAI';
+import { generateQuizAI } from '../lib/clientAI';
 import { 
   BrainCircuit, 
   CheckCircle2, 
@@ -70,10 +71,11 @@ export const QuizView: React.FC<QuizViewProps> = ({
           return;
         }
       }
-      throw new Error('Fallback quiz generator');
+      throw new Error('Server API unavailable, trying client AI');
     } catch (e) {
-      console.warn('Quiz generation API error, using fallback:', e);
-      setQuestions(generateFallbackQuiz(selectedSubDef?.name || 'Mathematics', topic));
+      console.warn('Quiz API unavailable, attempting client Gemini API / fallback:', e);
+      const questions = await generateQuizAI(selectedSubDef?.name || 'Mathematics', topic, profile.apiKey);
+      setQuestions(questions);
     } finally {
       setIsGenerating(false);
     }
