@@ -20,7 +20,20 @@ import {
 } from './lib/firestoreStorage';
 
 import { ActiveTab, UserProfile, StudySession, NoteItem, ChatMessage, QuizResult, Badge } from './types';
-import { loadBadges } from './lib/storage';
+import { 
+  loadProfile, 
+  saveProfile, 
+  loadSessions, 
+  saveSessions, 
+  loadNotes, 
+  saveNotes, 
+  loadChatMessages, 
+  saveChatMessages, 
+  loadBadges, 
+  saveBadges, 
+  loadQuizResults, 
+  saveQuizResults 
+} from './lib/storage';
 
 import { Navigation } from './components/Navigation';
 import { OnboardingModal } from './components/OnboardingModal';
@@ -38,6 +51,9 @@ import { Loader2 } from 'lucide-react';
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [isGuest, setIsGuest] = useState<boolean>(() => {
+    return localStorage.getItem('matricmate_guest_mode') === 'true';
+  });
 
   const [profile, setProfile] = useState<UserProfile>({
     id: '',
@@ -72,6 +88,27 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Load local guest state when guest mode is active and no Firebase user is logged in
+  useEffect(() => {
+    if (!user && isGuest) {
+      const loadedP = loadProfile();
+      if (!loadedP.name) {
+        loadedP.name = 'Guest Student';
+        loadedP.email = 'guest@matricmate.pk';
+      }
+      setProfile(loadedP);
+      setSessions(loadSessions());
+      setNotes(loadNotes());
+      setChatMessages(loadChatMessages());
+      setQuizResults(loadQuizResults());
+      setBadges(loadBadges());
+
+      if (!loadedP.onboardingCompleted) {
+        setOnboardingOpen(true);
+      }
+    }
+  }, [user, isGuest]);
+
   // Real-time Firestore subscriptions for authenticated user
   useEffect(() => {
     if (!user) return;
@@ -99,6 +136,7 @@ export default function App() {
         }
 
         setProfile(updated);
+        saveProfile(updated);
         if (!p.onboardingCompleted) {
           setOnboardingOpen(true);
         }
@@ -121,19 +159,33 @@ export default function App() {
         };
         saveProfileToFirestore(uid, initialProfile);
         setProfile(initialProfile);
+        saveProfile(initialProfile);
         setOnboardingOpen(true);
       }
     });
 
-    const unsubSessions = subscribeSessions(uid, (data) => setSessions(data));
-    const unsubNotes = subscribeNotes(uid, (data) => setNotes(data));
-    const unsubChat = subscribeChat(uid, (data) => setChatMessages(data));
+    const unsubSessions = subscribeSessions(uid, (data) => {
+      setSessions(data);
+      saveSessions(data);
+    });
+    const unsubNotes = subscribeNotes(uid, (data) => {
+      setNotes(data);
+      saveNotes(data);
+    });
+    const unsubChat = subscribeChat(uid, (data) => {
+      setChatMessages(data);
+      saveChatMessages(data);
+    });
     const unsubBadges = subscribeBadges(uid, (data) => {
       if (data && data.length > 0) {
         setBadges(data);
+        saveBadges(data);
       }
     });
-    const unsubQuizzes = subscribeQuizzes(uid, (data) => setQuizResults(data));
+    const unsubQuizzes = subscribeQuizzes(uid, (data) => {
+      setQuizResults(data);
+      saveQuizResults(data);
+    });
 
     return () => {
       unsubProfile();
@@ -147,6 +199,8 @@ export default function App() {
 
   // Handle Logout
   const handleLogout = async () => {
+    localStorage.removeItem('matricmate_guest_mode');
+    setIsGuest(false);
     try {
       await signOut(auth);
     } catch (e) {
@@ -157,6 +211,7 @@ export default function App() {
   // Handle Setup & Timetable Generation
   const handleSaveProfileAndGenerateSchedule = async (updatedProfile: UserProfile) => {
     setProfile(updatedProfile);
+    saveProfile(updatedProfile);
     if (user) {
       saveProfileToFirestore(user.uid, updatedProfile);
     }
@@ -186,6 +241,7 @@ export default function App() {
         const data = await res.json();
         if (data.schedule && data.schedule.length > 0) {
           setSessions(data.schedule);
+          saveSessions(data.schedule);
           if (user) saveSessionsBatchToFirestore(user.uid, data.schedule);
           return;
         }
@@ -195,6 +251,7 @@ export default function App() {
       console.warn('Backend endpoint unavailable, attempting client Gemini API / fallback:', e);
       const schedule = await generateScheduleAI(updatedProfile.subjects, updatedProfile.dailyStudyHours || 3, updatedProfile.apiKey);
       setSessions(schedule);
+      saveSessions(schedule);
       if (user) saveSessionsBatchToFirestore(user.uid, schedule);
     }
   };
@@ -212,6 +269,7 @@ export default function App() {
     });
 
     setSessions(updated);
+    saveSessions(updated);
 
     // Update streak if completing
     const completedNow = updated.find((s) => s.id === sessionId)?.status === 'completed';
@@ -219,6 +277,7 @@ export default function App() {
       const newStreak = (profile.streakDays || 0) + 1;
       const updatedP = { ...profile, streakDays: newStreak };
       setProfile(updatedP);
+      saveProfile(updatedP);
       if (user) saveProfileToFirestore(user.uid, updatedP);
 
       // Update badge progress
@@ -228,6 +287,7 @@ export default function App() {
         return b;
       });
       setBadges(updatedBadges);
+      saveBadges(updatedBadges);
       if (user) saveBadgesToFirestore(user.uid, updatedBadges);
     }
   };
@@ -257,6 +317,7 @@ export default function App() {
         const updated = sessions.map((s) => (s.id === session.id ? missedSession : s));
         const newSessions = [newSession, ...updated];
         setSessions(newSessions);
+        saveSessions(newSessions);
         if (user) {
           saveSessionToFirestore(user.uid, missedSession);
           saveSessionToFirestore(user.uid, newSession);
@@ -276,6 +337,7 @@ export default function App() {
       const missedSession = { ...session, status: 'missed' as const };
       const newSessions = [rescheduled, ...sessions.map((s) => (s.id === session.id ? missedSession : s))];
       setSessions(newSessions);
+      saveSessions(newSessions);
       if (user) {
         saveSessionToFirestore(user.uid, missedSession);
         saveSessionToFirestore(user.uid, rescheduled);
@@ -297,6 +359,7 @@ export default function App() {
 
     const newHistory = [...chatMessages, userMsg];
     setChatMessages(newHistory);
+    saveChatMessages(newHistory);
     if (user) saveChatMessageToFirestore(user.uid, userMsg);
 
     try {
@@ -323,10 +386,13 @@ export default function App() {
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             keyTakeaway: `${topic}: Master the core formula and double check unit conversions.`,
           };
-          setChatMessages([...newHistory, assistantMsg]);
+          const updatedChat = [...newHistory, assistantMsg];
+          setChatMessages(updatedChat);
+          saveChatMessages(updatedChat);
           if (user) saveChatMessageToFirestore(user.uid, assistantMsg);
           const updatedBadges = badges.map((b) => (b.id === 'b4' ? { ...b, progress: Math.min(b.maxProgress, b.progress + 1) } : b));
           setBadges(updatedBadges);
+          saveBadges(updatedBadges);
           if (user) saveBadgesToFirestore(user.uid, updatedBadges);
           return;
         }
@@ -344,10 +410,13 @@ export default function App() {
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         keyTakeaway: `${topic}: Show all working steps clearly in Matric exams.`,
       };
-      setChatMessages([...newHistory, assistantMsg]);
+      const updatedChat = [...newHistory, assistantMsg];
+      setChatMessages(updatedChat);
+      saveChatMessages(updatedChat);
       if (user) saveChatMessageToFirestore(user.uid, assistantMsg);
       const updatedBadges = badges.map((b) => (b.id === 'b4' ? { ...b, progress: Math.min(b.maxProgress, b.progress + 1) } : b));
       setBadges(updatedBadges);
+      saveBadges(updatedBadges);
       if (user) saveBadgesToFirestore(user.uid, updatedBadges);
     }
   };
@@ -359,24 +428,31 @@ export default function App() {
       id: `n-${Date.now()}`,
       createdAt: new Date().toISOString().split('T')[0],
     };
-    setNotes([newNote, ...notes]);
+    const updatedNotes = [newNote, ...notes];
+    setNotes(updatedNotes);
+    saveNotes(updatedNotes);
     if (user) saveNoteToFirestore(user.uid, newNote);
   };
 
   const handleDeleteNote = (noteId: string) => {
-    setNotes(notes.filter((n) => n.id !== noteId));
+    const updatedNotes = notes.filter((n) => n.id !== noteId);
+    setNotes(updatedNotes);
+    saveNotes(updatedNotes);
     if (user) deleteNoteFromFirestore(user.uid, noteId);
   };
 
   // Quiz Completed
   const handleQuizCompleted = (result: QuizResult) => {
-    setQuizResults([result, ...quizResults]);
+    const updatedQuizzes = [result, ...quizResults];
+    setQuizResults(updatedQuizzes);
+    saveQuizResults(updatedQuizzes);
     if (user) saveQuizResultToFirestore(user.uid, result);
 
     // Update Quiz badge if score >= 80%
     if (result.score / result.totalQuestions >= 0.8) {
       const updatedBadges = badges.map((b) => (b.id === 'b3' ? { ...b, progress: 1, unlockedAt: new Date().toISOString() } : b));
       setBadges(updatedBadges);
+      saveBadges(updatedBadges);
       if (user) saveBadgesToFirestore(user.uid, updatedBadges);
     }
   };
@@ -395,7 +471,9 @@ export default function App() {
       notes: `Priority revision slot added after quiz review: ${weakTopics.join(', ')}`,
       status: 'pending',
     };
-    setSessions([newSession, ...sessions]);
+    const updatedSessions = [newSession, ...sessions];
+    setSessions(updatedSessions);
+    saveSessions(updatedSessions);
     if (user) saveSessionToFirestore(user.uid, newSession);
   };
 
@@ -415,9 +493,16 @@ export default function App() {
     );
   }
 
-  // Auth View if not logged in
-  if (!user) {
-    return <AuthView />;
+  // Auth View if not logged in and not in guest mode
+  if (!user && !isGuest) {
+    return (
+      <AuthView 
+        onGuestLogin={() => {
+          localStorage.setItem('matricmate_guest_mode', 'true');
+          setIsGuest(true);
+        }}
+      />
+    );
   }
 
   return (

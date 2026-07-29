@@ -21,16 +21,22 @@ function getTodayStr(): string {
  * Recursively removes any keys with `undefined` values from an object,
  * as Firestore throws an invalid data error when receiving `undefined`.
  */
-function cleanUndefined<T extends Record<string, any>>(obj: T): Record<string, any> {
+function cleanUndefined(obj: any): any {
+  if (obj === null || obj === undefined) return null;
+  if (typeof obj !== 'object') return obj;
+  if (obj instanceof Date) return obj;
+
+  if (Array.isArray(obj)) {
+    return obj
+      .filter((item) => item !== undefined)
+      .map((item) => cleanUndefined(item));
+  }
+
   const cleaned: Record<string, any> = {};
   Object.keys(obj).forEach((key) => {
     const val = obj[key];
     if (val !== undefined) {
-      if (val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
-        cleaned[key] = cleanUndefined(val);
-      } else {
-        cleaned[key] = val;
-      }
+      cleaned[key] = cleanUndefined(val);
     }
   });
   return cleaned;

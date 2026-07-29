@@ -4,16 +4,18 @@ import {
   createUserWithEmailAndPassword, 
   signInWithPopup, 
   sendPasswordResetEmail,
+  signInAnonymously,
   updateProfile
 } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
-import { GraduationCap, Mail, Lock, User, ArrowRight, Loader2, AlertCircle, Sparkles } from 'lucide-react';
+import { GraduationCap, Mail, Lock, User, ArrowRight, Loader2, AlertCircle, Sparkles, UserCheck } from 'lucide-react';
 
 interface AuthViewProps {
   onAuthSuccess?: () => void;
+  onGuestLogin?: () => void;
 }
 
-export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
+export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess, onGuestLogin }) => {
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -21,6 +23,24 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
+
+  const handleGuestSignIn = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      await signInAnonymously(auth);
+      if (onAuthSuccess) onAuthSuccess();
+    } catch (err: any) {
+      console.warn('Anonymous sign in unavailable, switching to local guest mode:', err);
+      if (onGuestLogin) {
+        onGuestLogin();
+      } else if (onAuthSuccess) {
+        onAuthSuccess();
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -309,6 +329,16 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess }) => {
                   />
                 </svg>
                 <span>Continue with Google</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleGuestSignIn}
+                disabled={loading}
+                className="w-full py-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all mt-2"
+              >
+                <UserCheck className="w-4 h-4 text-emerald-600" />
+                <span>Continue as Guest / Demo Mode</span>
               </button>
             </>
           )}
