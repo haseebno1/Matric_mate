@@ -84,20 +84,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="relative overflow-hidden rounded-3xl bg-indigo-600 text-white p-6 sm:p-8 shadow-sm">
         <div className="absolute -right-10 -bottom-10 w-60 h-60 bg-white/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-white/20 text-white border border-white/30 backdrop-blur-sm">
-                {profile.grade || 'Grade 10'} Matric Prep
-              </span>
-              <span className="text-xs text-indigo-100 font-medium">{formattedTodayDate}</span>
+          <div className="flex items-start sm:items-center gap-4">
+            {profile.photoUrl ? (
+              <img
+                src={profile.photoUrl}
+                alt={profile.name || 'User Profile'}
+                referrerPolicy="no-referrer"
+                className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover border-2 border-white/40 shadow-md shrink-0"
+              />
+            ) : (
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/20 backdrop-blur-md border border-white/30 text-white flex items-center justify-center font-black text-xl sm:text-2xl shadow-md shrink-0">
+                {profile.name ? profile.name.charAt(0).toUpperCase() : 'S'}
+              </div>
+            )}
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-3 py-0.5 rounded-full text-[11px] font-bold bg-white/20 text-white border border-white/30 backdrop-blur-sm">
+                  {profile.grade || 'Grade 10'} Matric Prep
+                </span>
+                {profile.email && (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-indigo-900/60 text-indigo-100 border border-indigo-400/30">
+                    {profile.email}
+                  </span>
+                )}
+                <span className="text-xs text-indigo-100 font-medium hidden sm:inline">• {formattedTodayDate}</span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                Hello, {profile.name || 'Student'}! 👋
+              </h1>
+              <p className="text-xs sm:text-sm text-indigo-100 max-w-xl">
+                Consistency is key to Matric success. You have{' '}
+                <strong className="text-white font-bold">{todaySessions.length} study tasks</strong> scheduled for today.
+              </p>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-              Hello, {profile.name || 'Student'}! 👋
-            </h1>
-            <p className="text-xs sm:text-sm text-indigo-100 max-w-xl">
-              Consistency is key to Matric success. You have{' '}
-              <strong className="text-white font-bold">{todaySessions.length} study tasks</strong> scheduled for today.
-            </p>
           </div>
 
           {/* Quick Stats Pill Header */}

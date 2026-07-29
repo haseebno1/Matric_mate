@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { QuizQuestion, QuizResult, UserProfile, StudySession } from '../types';
+import { getSubjectById } from '../data/curriculumData';
 import { MATRIC_SUBJECTS } from '../data/subjectsData';
 import { generateFallbackQuiz } from '../lib/fallbackAI';
 import { generateQuizAI } from '../lib/clientAI';
@@ -27,12 +28,15 @@ export const QuizView: React.FC<QuizViewProps> = ({
   onQuizCompleted,
   onAddWeakTopicsToSchedule,
 }) => {
-  const [subjectId, setSubjectId] = useState<string>(
-    profile.subjects && profile.subjects[0] ? profile.subjects[0].subjectId : 'math'
-  );
+  const initialSubId = profile.subjects && profile.subjects[0] ? profile.subjects[0].subjectId : 'PHY-10';
+  const [subjectId, setSubjectId] = useState<string>(initialSubId);
 
-  const selectedSubDef = MATRIC_SUBJECTS.find((m) => m.id === subjectId);
-  const [topic, setTopic] = useState<string>(selectedSubDef?.defaultTopics[0] || 'Algebra & Equations');
+  const selectedSubDef = getSubjectById(subjectId);
+  const initialTopic = selectedSubDef && selectedSubDef.chapters.length > 0
+    ? `Ch ${selectedSubDef.chapters[0].chapter_number}: ${selectedSubDef.chapters[0].chapter_title}`
+    : 'Core Concepts';
+
+  const [topic, setTopic] = useState<string>(initialTopic);
 
   // Quiz state
   const [isGenerating, setIsGenerating] = useState(false);
@@ -58,7 +62,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          subjectName: selectedSubDef?.name || 'Mathematics',
+          subjectName: selectedSubDef?.subject_name || 'Mathematics',
           topic: topic,
           numQuestions: 5,
         }),
@@ -74,7 +78,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
       throw new Error('Server API unavailable, trying client AI');
     } catch (e) {
       console.warn('Quiz API unavailable, attempting client Gemini API / fallback:', e);
-      const questions = await generateQuizAI(selectedSubDef?.name || 'Mathematics', topic, profile.apiKey);
+      const questions = await generateQuizAI(selectedSubDef?.subject_name || 'Mathematics', topic, profile.apiKey);
       setQuestions(questions);
     } finally {
       setIsGenerating(false);
@@ -174,17 +178,20 @@ export const QuizView: React.FC<QuizViewProps> = ({
               <select
                 value={subjectId}
                 onChange={(e) => {
-                  setSubjectId(e.target.value);
-                  const sub = MATRIC_SUBJECTS.find((m) => m.id === e.target.value);
-                  if (sub) setTopic(sub.defaultTopics[0] || 'Core');
+                  const newSubId = e.target.value;
+                  setSubjectId(newSubId);
+                  const newSubDef = getSubjectById(newSubId);
+                  if (newSubDef && newSubDef.chapters.length > 0) {
+                    setTopic(`Ch ${newSubDef.chapters[0].chapter_number}: ${newSubDef.chapters[0].chapter_title}`);
+                  }
                 }}
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-500"
               >
                 {profile.subjects.map((s) => {
-                  const subDef = MATRIC_SUBJECTS.find((m) => m.id === s.subjectId);
+                  const sDef = getSubjectById(s.subjectId);
                   return (
                     <option key={s.subjectId} value={s.subjectId}>
-                      {subDef?.name || s.subjectId}
+                      {sDef ? sDef.subject_name : s.subjectId}
                     </option>
                   );
                 })}
@@ -192,17 +199,20 @@ export const QuizView: React.FC<QuizViewProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Topic</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Curriculum Chapter / Topic</label>
               <select
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-500"
               >
-                {selectedSubDef?.defaultTopics.map((top) => (
-                  <option key={top} value={top}>
-                    {top}
-                  </option>
-                ))}
+                {getSubjectById(subjectId)?.chapters.map((ch) => {
+                  const titleStr = `Ch ${ch.chapter_number}: ${ch.chapter_title}`;
+                  return (
+                    <option key={ch.chapter_number} value={titleStr}>
+                      {titleStr}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
@@ -224,7 +234,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
           <Loader2 className="w-10 h-10 text-emerald-600 animate-spin mx-auto" />
           <h3 className="text-lg font-bold text-slate-900">Generating AI Quiz...</h3>
           <p className="text-xs text-slate-500">
-            Fetching exam-style questions for <strong className="text-emerald-700">{selectedSubDef?.name}: {topic}</strong>...
+            Fetching exam-style questions for <strong className="text-emerald-700">{selectedSubDef?.subject_name}: {topic}</strong>...
           </p>
         </div>
       )}
@@ -345,7 +355,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
           <div className="space-y-2">
             <h3 className="text-2xl font-black text-slate-900">Quiz Completed!</h3>
             <p className="text-xs text-slate-500">
-              Subject: <strong className="text-slate-900">{selectedSubDef?.name}</strong> • Topic: <strong className="text-emerald-700">{topic}</strong>
+              Subject: <strong className="text-slate-900">{selectedSubDef?.subject_name}</strong> • Topic: <strong className="text-emerald-700">{topic}</strong>
             </p>
           </div>
 

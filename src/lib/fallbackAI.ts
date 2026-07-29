@@ -1,8 +1,8 @@
 import { StudySession, QuizQuestion } from '../types';
-import { MATRIC_SUBJECTS } from '../data/subjectsData';
+import { getSubjectById } from '../data/curriculumData';
 
 /**
- * Generate fallback study schedule when backend API is unreachable (e.g. Netlify static hosting)
+ * Generate fallback study schedule grounded in BISE Lahore curriculum
  */
 export function generateFallbackSchedule(
   subjectsConfig: { subjectId: string; examDate: string; confidence: number }[],
@@ -11,7 +11,7 @@ export function generateFallbackSchedule(
   const sessions: StudySession[] = [];
   const today = new Date();
 
-  // Time slots template
+  // Typical study time slots
   const timeSlots = [
     '15:30 - 16:30',
     '17:00 - 18:00',
@@ -19,7 +19,7 @@ export function generateFallbackSchedule(
     '20:00 - 21:00',
   ];
 
-  // Sort subjects by priority: lowest confidence first
+  // Priority sort: lower confidence first
   const sortedSubjects = [...subjectsConfig].sort((a, b) => a.confidence - b.confidence);
 
   let sessionCount = 0;
@@ -29,15 +29,18 @@ export function generateFallbackSchedule(
     currentDay.setDate(today.getDate() + dayOffset);
     const dateStr = currentDay.toISOString().split('T')[0];
 
-    // Number of sessions per day based on dailyHours
     const numSessionsToday = Math.min(timeSlots.length, Math.max(1, Math.round(dailyHours)));
 
     for (let slotIdx = 0; slotIdx < numSessionsToday; slotIdx++) {
-      // Pick subject in round-robin fashion, prioritizing lower confidence
       const config = sortedSubjects[sessionCount % sortedSubjects.length];
-      const subDef = MATRIC_SUBJECTS.find((m) => m.id === config.subjectId);
-      const topics = subDef?.defaultTopics || ['Core Practice', 'Exam Review'];
-      const selectedTopic = topics[(dayOffset + slotIdx) % topics.length];
+      const subObj = getSubjectById(config.subjectId);
+      
+      let selectedTopic = 'Core Concept Revision & Past Papers';
+      if (subObj && subObj.chapters.length > 0) {
+        const chap = subObj.chapters[(dayOffset + slotIdx) % subObj.chapters.length];
+        const keyTopic = chap.key_topics[(slotIdx + dayOffset) % chap.key_topics.length];
+        selectedTopic = `Ch ${chap.chapter_number}: ${chap.chapter_title} - ${keyTopic}`;
+      }
 
       sessionCount++;
       sessions.push({
@@ -48,8 +51,8 @@ export function generateFallbackSchedule(
         timeSlot: timeSlots[slotIdx % timeSlots.length],
         durationMinutes: 60,
         notes: config.confidence <= 2 
-          ? `Priority focus: Review core formulas and past paper examples.` 
-          : `Regular revision session: Test understanding with quick practice.`,
+          ? `Priority focus: Review core PCTB formulas, definitions, and past paper examples.` 
+          : `Regular revision session: Test understanding with quick practice questions.`,
         status: 'pending',
       });
     }
@@ -64,15 +67,15 @@ export function generateFallbackSchedule(
 export function generateFallbackBuddyReply(question: string, subjectName: string, topic: string): string {
   return `### **Understanding ${topic} in ${subjectName}**
 
-Here is a simple, step-by-step breakdown to solve questions on **${topic}**:
+Here is a simple, step-by-step breakdown to solve questions on **${topic}** for BISE Lahore board exams:
 
-1. **Understand the Core Definition**: Focus on the fundamental rules. Always identify the given values and what the question asks you to find.
-2. **Apply the Standard Formula**: Write down the formula clearly before substituting values. Keep track of negative signs and units.
+1. **Understand the Core Definition**: Focus on the fundamental PCTB rules. Always identify given values and what the question asks you to find.
+2. **Apply the Standard Formula & Units**: Write down the formula clearly before substituting values. Ensure correct SI units.
 3. **Double Check Exam Pitfalls**: A common mistake students make in **${subjectName}** is rushing through basic arithmetic or skipping intermediate working steps. Show all working to secure method marks!
 
 ---
-💡 **Quick Key Takeaway:**
-*Always write out your steps clearly. In Matric exams, up to 60% of marks are awarded for correct working steps even if the final calculation has a small arithmetic error!*
+💡 **Quick Key Exam Takeaway:**
+*Always write out your steps clearly. In BISE Lahore exams, up to 60% of marks are awarded for correct working steps even if the final calculation has a small arithmetic error!*
 
 **Practice Question:** Can you state one key formula or definition used in **${topic}**?`;
 }
@@ -84,33 +87,33 @@ export function generateFallbackQuiz(subjectName: string, topic: string): QuizQu
   return [
     {
       id: `fq-${Date.now()}-1`,
-      question: `Which of the following represents the correct fundamental approach when studying ${topic}?`,
+      question: `Which of the following represents the correct fundamental approach when answering exam questions on ${topic}?`,
       options: [
-        'Memorize definitions without understanding steps',
-        'Identify given values, write down the formula, and show clear step-by-step working',
+        'Memorize definitions without understanding working steps',
+        'Identify given values, write down the formula, and show clear step-by-step working with units',
         'Skip negative signs in calculations',
         'Only practice questions right before the exam',
       ],
       correctIndex: 1,
-      explanation: 'In Matric exams, showing clear working steps and identifying formulas gains essential method marks.',
+      explanation: 'In BISE Lahore board exams, showing clear working steps and identifying formulas gains essential method marks.',
       topic: topic,
     },
     {
       id: `fq-${Date.now()}-2`,
-      question: `When answering exam questions on ${topic} in ${subjectName}, what is a common pitfall to avoid?`,
+      question: `When solving numericals or conceptual questions on ${topic} in ${subjectName}, what is a common pitfall to avoid?`,
       options: [
-        'Rushing through algebra/units without checking working',
+        'Rushing through SI unit conversions without checking working',
         'Writing down too many correct steps',
         'Reading the question carefully twice',
         'Checking your answer using substitution',
       ],
       correctIndex: 0,
-      explanation: 'Rushing through unit conversions or arithmetic without re-checking is the #1 cause of lost marks.',
+      explanation: 'Rushing through unit conversions (e.g. cm to m) or arithmetic without re-checking is the #1 cause of lost marks.',
       topic: topic,
     },
     {
       id: `fq-${Date.now()}-3`,
-      question: `Why is it recommended to complete past exam questions for ${topic}?`,
+      question: `Why is it recommended to complete past BISE Lahore exam questions for ${topic}?`,
       options: [
         'Past exam questions are never repeated',
         'It helps familiarize you with mark allocation, question phrasing, and exam pacing',
@@ -136,7 +139,7 @@ export function generateFallbackQuiz(subjectName: string, topic: string): QuizQu
     },
     {
       id: `fq-${Date.now()}-5`,
-      question: `What is the best technique to test your mastery of ${topic}?`,
+      question: `What is the best active study technique to master ${topic}?`,
       options: [
         'Re-reading notes passively 5 times',
         'Teaching or explaining the concept in simple terms without looking at solutions',
@@ -144,7 +147,7 @@ export function generateFallbackQuiz(subjectName: string, topic: string): QuizQu
         'Only studying easy questions',
       ],
       correctIndex: 1,
-      explanation: 'Active recall and self-explanation are scientifically proven to be the most effective study techniques.',
+      explanation: 'Active recall and self-explanation are scientifically proven to be the most effective study techniques for board exams.',
       topic: topic,
     },
   ];

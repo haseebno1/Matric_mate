@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { UserProfile, SubjectConfig } from '../types';
-import { MATRIC_SUBJECTS } from '../data/subjectsData';
+import { getSubjectsForGradeAndGroup, getSubjectById, SubjectDef } from '../data/curriculumData';
 import { 
   GraduationCap, 
   Sparkles, 
@@ -9,11 +9,11 @@ import {
   ArrowLeft, 
   Calendar, 
   Star, 
-  Clock, 
   Loader2, 
   Check,
   ShieldCheck,
-  BookOpen
+  BookOpen,
+  Compass
 } from 'lucide-react';
 
 interface OnboardingModalProps {
@@ -30,24 +30,92 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
   onSaveProfileAndGenerate,
 }) => {
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
-  const [name, setName] = useState(profile.name || 'Sipho Dlamini');
+  const [name, setName] = useState(profile.name || '');
   const [grade, setGrade] = useState<'Grade 9' | 'Grade 10'>(profile.grade || 'Grade 10');
-  const [email, setEmail] = useState(profile.email || 'sipho@matricmate.co.za');
+  const [group, setGroup] = useState<'Science' | 'Computer Science' | 'Arts'>(profile.group || 'Science');
+  const [email, setEmail] = useState(profile.email || '');
   const [dailyHours, setDailyHours] = useState(profile.dailyStudyHours || 3);
-  
-  // Selected subjects state
-  const [selectedSubjectConfigs, setSelectedSubjectConfigs] = useState<SubjectConfig[]>(
-    profile.subjects && profile.subjects.length > 0
-      ? profile.subjects
-      : [
-          { subjectId: 'math', examDate: getFutureDate(14), confidence: 2 },
-          { subjectId: 'physics', examDate: getFutureDate(20), confidence: 3 },
-          { subjectId: 'life_sci', examDate: getFutureDate(26), confidence: 4 },
-          { subjectId: 'english', examDate: getFutureDate(10), confidence: 5 },
-        ]
-  );
 
+  const prevIsOpenRef = useRef(false);
+  const prevGradeRef = useRef(grade);
+  const prevGroupRef = useRef(group);
+
+  // Dynamic list of subjects based on grade and group
+  const availableSubjects: SubjectDef[] = getSubjectsForGradeAndGroup(grade, group);
+
+  // Selected subjects state
+  const [selectedSubjectConfigs, setSelectedSubjectConfigs] = useState<SubjectConfig[]>(() => {
+    if (profile.subjects && profile.subjects.length > 0 && profile.subjects[0].subjectId.includes('-')) {
+      return profile.subjects;
+    }
+    return getDefaultSubjects(grade, group);
+  });
+
+  // Reset/Initialize modal state ONLY when modal transitions from closed to open
+  useEffect(() => {
+    if (isOpen && !prevIsOpenRef.current) {
+      setStep(1);
+      const initialName = profile.name || '';
+      const initialEmail = profile.email || '';
+      const initialGrade = profile.grade || 'Grade 10';
+      const initialGroup = profile.group || 'Science';
+      const initialHours = profile.dailyStudyHours || 3;
+
+      setName(initialName);
+      setEmail(initialEmail);
+      setGrade(initialGrade);
+      setGroup(initialGroup);
+      setDailyHours(initialHours);
+
+      prevGradeRef.current = initialGrade;
+      prevGroupRef.current = initialGroup;
+
+      const list = getSubjectsForGradeAndGroup(initialGrade, initialGroup);
+      if (profile.subjects && profile.subjects.length > 0) {
+        const validSubs = profile.subjects.filter((s) =>
+          list.some((l) => l.subject_id === s.subjectId)
+        );
+        if (validSubs.length > 0) {
+          setSelectedSubjectConfigs(validSubs);
+        } else {
+          setSelectedSubjectConfigs(getDefaultSubjects(initialGrade, initialGroup));
+        }
+      } else {
+        setSelectedSubjectConfigs(getDefaultSubjects(initialGrade, initialGroup));
+      }
+    }
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, profile]);
+
+  const [expandedSubjectId, setExpandedSubjectId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Automatically update selected subjects when user changes grade or group INSIDE the wizard
+  useEffect(() => {
+    if (!isOpen) return;
+    if (grade === prevGradeRef.current && group === prevGroupRef.current) return;
+
+    prevGradeRef.current = grade;
+    prevGroupRef.current = group;
+
+    const list = getSubjectsForGradeAndGroup(grade, group);
+    const updated = list.map((sub, idx) => {
+      const existing = selectedSubjectConfigs.find((s) => s.subjectId === sub.subject_id);
+      if (existing) return existing;
+
+      const chapterConf: Record<number, number> = {};
+      sub.chapters.forEach((ch) => {
+        chapterConf[ch.chapter_number] = 3;
+      });
+      return {
+        subjectId: sub.subject_id,
+        examDate: getFutureDate(15 + idx * 3),
+        confidence: 3,
+        chapterConfidences: chapterConf,
+      };
+    });
+    setSelectedSubjectConfigs(updated);
+  }, [grade, group, isOpen]);
 
   if (!isOpen) return null;
 
@@ -57,15 +125,36 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     return d.toISOString().split('T')[0];
   }
 
+  function getDefaultSubjects(g: 'Grade 9' | 'Grade 10', grp: 'Science' | 'Computer Science' | 'Arts'): SubjectConfig[] {
+    const list = getSubjectsForGradeAndGroup(g, grp);
+    return list.map((sub, idx) => {
+      const chapterConf: Record<number, number> = {};
+      sub.chapters.forEach((ch) => {
+        chapterConf[ch.chapter_number] = 3;
+      });
+      return {
+        subjectId: sub.subject_id,
+        examDate: getFutureDate(15 + idx * 3),
+        confidence: 3,
+        chapterConfidences: chapterConf,
+      };
+    });
+  }
+
   const toggleSubject = (subjectId: string) => {
     const exists = selectedSubjectConfigs.find((s) => s.subjectId === subjectId);
     if (exists) {
       if (selectedSubjectConfigs.length <= 1) return; // keep at least 1
       setSelectedSubjectConfigs(selectedSubjectConfigs.filter((s) => s.subjectId !== subjectId));
     } else {
+      const subDef = getSubjectById(subjectId);
+      const chapterConf: Record<number, number> = {};
+      subDef?.chapters.forEach((ch) => {
+        chapterConf[ch.chapter_number] = 3;
+      });
       setSelectedSubjectConfigs([
         ...selectedSubjectConfigs,
-        { subjectId, examDate: getFutureDate(21), confidence: 3 },
+        { subjectId, examDate: getFutureDate(21), confidence: 3, chapterConfidences: chapterConf },
       ]);
     }
   };
@@ -76,9 +165,48 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
     );
   };
 
-  const updateConfidence = (subjectId: string, confidence: number) => {
-    setSelectedSubjectConfigs(
-      selectedSubjectConfigs.map((s) => (s.subjectId === subjectId ? { ...s, confidence } : s))
+  const updateChapterConfidence = (subjectId: string, chapterNumber: number, rating: number) => {
+    setSelectedSubjectConfigs((prev) =>
+      prev.map((s) => {
+        if (s.subjectId !== subjectId) return s;
+        const subDef = getSubjectById(subjectId);
+        const updatedConf: Record<number, number> = { ...(s.chapterConfidences || {}) };
+        
+        // ensure default for all chapters if missing
+        subDef?.chapters.forEach((ch) => {
+          if (updatedConf[ch.chapter_number] === undefined) {
+            updatedConf[ch.chapter_number] = 3;
+          }
+        });
+        updatedConf[chapterNumber] = rating;
+
+        const ratings = Object.values(updatedConf);
+        const avg = Math.round(ratings.reduce((a, b) => a + b, 0) / (ratings.length || 1));
+
+        return {
+          ...s,
+          confidence: avg,
+          chapterConfidences: updatedConf,
+        };
+      })
+    );
+  };
+
+  const updateOverallConfidence = (subjectId: string, confidence: number) => {
+    setSelectedSubjectConfigs((prev) =>
+      prev.map((s) => {
+        if (s.subjectId !== subjectId) return s;
+        const subDef = getSubjectById(subjectId);
+        const updatedConf: Record<number, number> = { ...(s.chapterConfidences || {}) };
+        subDef?.chapters.forEach((ch) => {
+          updatedConf[ch.chapter_number] = confidence;
+        });
+        return {
+          ...s,
+          confidence,
+          chapterConfidences: updatedConf,
+        };
+      })
     );
   };
 
@@ -88,6 +216,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       ...profile,
       name,
       grade,
+      group,
+      board: 'BISE Lahore',
       email,
       dailyStudyHours: dailyHours,
       subjects: selectedSubjectConfigs,
@@ -99,7 +229,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
       setStep(6);
     } catch (e) {
       console.error('Generation error', e);
-      setStep(6); // still continue
+      setStep(6);
     } finally {
       setIsGenerating(false);
     }
@@ -112,7 +242,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <GraduationCap className="w-5 h-5 text-indigo-600" />
-            <span className="font-bold text-sm tracking-wide text-indigo-950">MatricMate Setup Wizard</span>
+            <span className="font-bold text-sm tracking-wide text-indigo-950">BISE Lahore Matric Setup</span>
           </div>
           <div className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold">
             <span>Step {step} of 6</span>
@@ -136,29 +266,33 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 </div>
               </div>
               <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  <Compass className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>BISE Lahore • PCTB / SNC Framework</span>
+                </div>
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
                   Welcome to MatricMate
                 </h2>
                 <p className="text-slate-600 max-w-md mx-auto text-sm sm:text-base font-medium">
-                  Your AI-powered study planner & exam revision companion designed specifically for Grade 9–10 Matric success.
+                  Your AI study planner & exam revision companion powered by the official BISE Lahore Class 9–10 curriculum.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left max-w-lg mx-auto pt-2">
                 <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
                   <Sparkles className="w-5 h-5 text-indigo-600 mb-1" />
-                  <h4 className="font-bold text-xs text-slate-900">Adaptive Schedule</h4>
-                  <p className="text-[11px] text-slate-500 font-medium">AI auto-allocates revision based on confidence & exam dates.</p>
+                  <h4 className="font-bold text-xs text-slate-900">Official Curriculum</h4>
+                  <p className="text-[11px] text-slate-500 font-medium">Pre-loaded with official PCTB Class 9 & 10 chapters and key topics.</p>
                 </div>
                 <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
                   <BookOpen className="w-5 h-5 text-cyan-600 mb-1" />
-                  <h4 className="font-bold text-xs text-slate-900">AI Study Buddy</h4>
-                  <p className="text-[11px] text-slate-500 font-medium">Ask questions 24/7 & get simple step-by-step explanations.</p>
+                  <h4 className="font-bold text-xs text-slate-900">AI Board Tutor</h4>
+                  <p className="text-[11px] text-slate-500 font-medium">Ask doubts on any chapter and get step-by-step exam solutions.</p>
                 </div>
                 <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
                   <ShieldCheck className="w-5 h-5 text-emerald-600 mb-1" />
                   <h4 className="font-bold text-xs text-slate-900">Smart Quizzes</h4>
-                  <p className="text-[11px] text-slate-500 font-medium">Test understanding & automatically reschedule weak topics.</p>
+                  <p className="text-[11px] text-slate-500 font-medium">Test understanding with BISE board SLO taxonomy questions.</p>
                 </div>
               </div>
 
@@ -173,12 +307,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             </div>
           )}
 
-          {/* STEP 2: Account Details */}
+          {/* STEP 2: Profile & Stream Details */}
           {step === 2 && (
             <div className="space-y-6">
               <div>
-                <h3 className="text-xl font-bold text-slate-900">Let’s set up your Profile</h3>
-                <p className="text-xs text-slate-500 font-medium mt-1">Tell us your name and daily study availability.</p>
+                <h3 className="text-xl font-bold text-slate-900">Profile & Academic Stream</h3>
+                <p className="text-xs text-slate-500 font-medium mt-1">Select your Grade level and Academic Group under BISE Lahore.</p>
               </div>
 
               <div className="space-y-4">
@@ -188,33 +322,35 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. Sipho Dlamini"
+                    placeholder="e.g. Ali Raza"
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Grade Level</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Grade / Class</label>
                     <select
                       value={grade}
                       onChange={(e) => setGrade(e.target.value as any)}
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
                     >
-                      <option value="Grade 9">Grade 9</option>
-                      <option value="Grade 10">Grade 10 (Matric Prep)</option>
+                      <option value="Grade 9">SSC Part I (Class 9)</option>
+                      <option value="Grade 10">SSC Part II (Class 10)</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Email / Phone</label>
-                    <input
-                      type="text"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="student@school.co.za"
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Academic Group</label>
+                    <select
+                      value={group}
+                      onChange={(e) => setGroup(e.target.value as any)}
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
-                    />
+                    >
+                      <option value="Science">Science (Bio, Phy, Chem)</option>
+                      <option value="Computer Science">Computer Science (CS, Phy, Chem)</option>
+                      <option value="Arts">Arts (General Math & Gen Science)</option>
+                    </select>
                   </div>
                 </div>
 
@@ -262,16 +398,18 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             <div className="space-y-6">
               <div>
                 <h3 className="text-xl font-bold text-slate-900">Select Your Subjects</h3>
-                <p className="text-xs text-slate-500 font-medium mt-1">Choose all Matric subjects you are currently studying.</p>
+                <p className="text-xs text-slate-500 font-medium mt-1">
+                  Available BISE Lahore subjects for {grade} ({group} Group):
+                </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto pr-1">
-                {MATRIC_SUBJECTS.map((sub) => {
-                  const isSelected = selectedSubjectConfigs.some((s) => s.subjectId === sub.id);
+                {availableSubjects.map((sub) => {
+                  const isSelected = selectedSubjectConfigs.some((s) => s.subjectId === sub.subject_id);
                   return (
                     <div
-                      key={sub.id}
-                      onClick={() => toggleSubject(sub.id)}
+                      key={sub.subject_id}
+                      onClick={() => toggleSubject(sub.subject_id)}
                       className={`p-3 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
                         isSelected
                           ? 'bg-indigo-50/70 border-indigo-300 text-slate-900 shadow-2xs'
@@ -286,8 +424,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                           {sub.code}
                         </div>
                         <div>
-                          <h4 className="text-xs font-bold text-slate-900">{sub.name}</h4>
-                          <p className="text-[10px] text-slate-500 font-medium">{sub.defaultTopics.length} Core Topics</p>
+                          <h4 className="text-xs font-bold text-slate-900">{sub.subject_name}</h4>
+                          <p className="text-[10px] text-slate-500 font-medium">{sub.chapters.length} Chapters in Syllabus</p>
                         </div>
                       </div>
 
@@ -328,12 +466,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             <div className="space-y-6">
               <div>
                 <h3 className="text-xl font-bold text-slate-900">Enter Exam Dates</h3>
-                <p className="text-xs text-slate-500 font-medium mt-1">When do your final or term exams start for each subject?</p>
+                <p className="text-xs text-slate-500 font-medium mt-1">When do your final BISE board exams start for each subject?</p>
               </div>
 
               <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
                 {selectedSubjectConfigs.map((cfg) => {
-                  const subDef = MATRIC_SUBJECTS.find((m) => m.id === cfg.subjectId);
+                  const subDef = getSubjectById(cfg.subjectId);
                   return (
                     <div
                       key={cfg.subjectId}
@@ -346,7 +484,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                         >
                           {subDef?.code}
                         </div>
-                        <span className="text-xs font-bold text-slate-900">{subDef?.name}</span>
+                        <span className="text-xs font-bold text-slate-900">{subDef?.subject_name || cfg.subjectId}</span>
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -381,48 +519,115 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
             </div>
           )}
 
-          {/* STEP 5: Confidence Rating */}
+          {/* STEP 5: Confidence Rating (Per-Chapter Sourced from Knowledge Base) */}
           {step === 5 && (
             <div className="space-y-6">
               <div>
-                <h3 className="text-xl font-bold text-slate-900">Rate Your Confidence</h3>
+                <h3 className="text-xl font-bold text-slate-900">Per-Chapter Confidence Ratings</h3>
                 <p className="text-xs text-slate-500 font-medium mt-1">
-                  1 = Urgent help needed, 5 = Mastered. The AI will prioritize lower-rated subjects.
+                  Rate your confidence (1 = Needs urgent revision, 5 = Mastered) for each official curriculum chapter.
                 </p>
               </div>
 
-              <div className="space-y-4 max-h-72 overflow-y-auto pr-1">
+              <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
                 {selectedSubjectConfigs.map((cfg) => {
-                  const subDef = MATRIC_SUBJECTS.find((m) => m.id === cfg.subjectId);
+                  const subDef = getSubjectById(cfg.subjectId);
+                  const chapters = subDef?.chapters || [];
+                  const isExpanded = expandedSubjectId === cfg.subjectId || selectedSubjectConfigs.length <= 2;
+
                   return (
-                    <div key={cfg.subjectId} className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                    <div key={cfg.subjectId} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
                       <div className="flex justify-between items-center">
-                        <span className="text-xs font-bold text-slate-900">{subDef?.name}</span>
-                        <span className="text-xs font-semibold text-indigo-600">
-                          {cfg.confidence}/5 {cfg.confidence <= 2 ? '(Priority Revision)' : cfg.confidence >= 4 ? '(Strong)' : '(Moderate)'}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-[11px]"
+                            style={{ backgroundColor: `${subDef?.color || '#3b82f6'}15`, color: subDef?.color }}
+                          >
+                            {subDef?.code}
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-900">{subDef?.subject_name || cfg.subjectId}</h4>
+                            <p className="text-[10px] text-slate-500">{chapters.length} Curriculum Chapters</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
+                            Avg: {cfg.confidence}/5
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedSubjectId(isExpanded ? null : cfg.subjectId)}
+                            className="text-xs text-slate-500 hover:text-slate-800 font-semibold underline"
+                          >
+                            {isExpanded ? 'Collapse Chapters' : 'Expand Chapters'}
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <button
-                            key={star}
-                            onClick={() => updateConfidence(cfg.subjectId, star)}
-                            className={`flex-1 py-1.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 transition-all ${
-                              cfg.confidence >= star
-                                ? 'bg-amber-100 border-amber-300 text-amber-900'
-                                : 'bg-white border-slate-200 text-slate-400 hover:text-slate-700'
-                            }`}
-                          >
-                            <Star
-                              className={`w-3.5 h-3.5 ${
-                                cfg.confidence >= star ? 'fill-amber-400 text-amber-500' : ''
-                              }`}
-                            />
-                            <span>{star}</span>
-                          </button>
-                        ))}
+                      {/* Overall Quick Set bar */}
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 bg-white p-2 rounded-xl border border-slate-200">
+                        <span>Set all chapters to:</span>
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              type="button"
+                              onClick={() => updateOverallConfidence(cfg.subjectId, star)}
+                              className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 border border-slate-200"
+                            >
+                              {star}★
+                            </button>
+                          ))}
+                        </div>
                       </div>
+
+                      {/* Per Chapter List */}
+                      {isExpanded && (
+                        <div className="space-y-2 pt-1 border-t border-slate-200">
+                          {chapters.map((ch) => {
+                            const currentRating =
+                              cfg.chapterConfidences?.[ch.chapter_number] ?? cfg.confidence ?? 3;
+
+                            return (
+                              <div
+                                key={ch.chapter_number}
+                                className="p-2.5 bg-white border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                              >
+                                <div>
+                                  <span className="text-[11px] font-bold text-slate-900">
+                                    Ch {ch.chapter_number}: {ch.chapter_title}
+                                  </span>
+                                  <p className="text-[10px] text-slate-400 font-medium truncate max-w-xs">
+                                    {ch.key_topics.slice(0, 2).join(', ')}
+                                  </p>
+                                </div>
+
+                                <div className="flex items-center gap-1 self-end sm:self-center">
+                                  {[1, 2, 3, 4, 5].map((star) => (
+                                    <button
+                                      key={star}
+                                      type="button"
+                                      onClick={() => updateChapterConfidence(cfg.subjectId, ch.chapter_number, star)}
+                                      className={`p-1 rounded-lg border text-[10px] font-bold flex items-center gap-0.5 transition-all ${
+                                        currentRating >= star
+                                          ? 'bg-amber-50 border-amber-300 text-amber-900 font-extrabold'
+                                          : 'bg-white border-slate-200 text-slate-400 hover:text-slate-700'
+                                      }`}
+                                    >
+                                      <Star
+                                        className={`w-3 h-3 ${
+                                          currentRating >= star ? 'fill-amber-400 text-amber-500' : ''
+                                        }`}
+                                      />
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -466,11 +671,15 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
               <div className="space-y-2">
                 <h3 className="text-2xl font-extrabold text-slate-900">Your Schedule is Ready!</h3>
                 <p className="text-slate-600 text-sm max-w-md mx-auto font-medium">
-                  MatricMate AI has crafted your personalized revision timetable synced with your exam dates & confidence ratings.
+                  MatricMate AI has crafted your personalized revision timetable synced with your BISE Lahore exam dates & confidence ratings.
                 </p>
               </div>
 
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-left text-xs space-y-2 max-w-md mx-auto">
+                <div className="flex justify-between text-slate-600 font-medium">
+                  <span>Target Class & Group:</span>
+                  <strong className="text-slate-900">{grade} ({group})</strong>
+                </div>
                 <div className="flex justify-between text-slate-600 font-medium">
                   <span>Selected Subjects:</span>
                   <strong className="text-slate-900">{selectedSubjectConfigs.length} Subjects</strong>
@@ -484,7 +693,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                   <strong className="text-amber-700">
                     {selectedSubjectConfigs
                       .filter((s) => s.confidence <= 2)
-                      .map((s) => MATRIC_SUBJECTS.find((m) => m.id === s.subjectId)?.code)
+                      .map((s) => getSubjectById(s.subjectId)?.code)
                       .join(', ') || 'Balanced'}
                   </strong>
                 </div>

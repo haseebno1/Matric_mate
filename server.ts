@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
+import { getSubjectById, getAllCurriculumSubjects } from './src/data/curriculumData.js';
 
 dotenv.config();
 
@@ -35,30 +36,44 @@ function getGeminiClient() {
 // ----------------------------------------------------
 app.post('/api/schedule/generate', async (req, res) => {
   try {
-    const { subjects, dailyHours = 3, startDate, endDate } = req.body;
+    const { subjects, dailyHours = 3, startDate } = req.body;
     
     if (!subjects || !Array.isArray(subjects) || subjects.length === 0) {
       return res.status(400).json({ error: 'Subjects array is required' });
     }
 
     const ai = getGeminiClient();
+
+    // Map subjects to official chapters in BISE Lahore knowledge base
+    const subjectsSyllabus = subjects.map((s: any) => {
+      const subObj = getSubjectById(s.subjectId);
+      const chaptersInfo = subObj
+        ? subObj.chapters.map(ch => `Ch ${ch.chapter_number}: ${ch.chapter_title} (Topics: ${ch.key_topics.join(', ')})`).join('\n  ')
+        : 'General curriculum chapters';
+
+      return `- Subject: ${subObj?.subject_name || s.name || s.subjectId} (ID: ${s.subjectId})
+  Exam Date: ${s.examDate}
+  Student Confidence: ${s.confidence}/5
+  Syllabus Chapters:
+  ${chaptersInfo}`;
+    }).join('\n\n');
     
     const prompt = `
-You are MatricMate, an expert Matric (Grade 9-10) AI Study Planner.
-Generate a structured, realistic, and highly optimized daily study schedule.
+You are MatricMate, an expert AI Study Planner for BISE Lahore (PCTB/SNC Framework) Matric students (Class 9-10).
+Generate a structured, realistic, and highly optimized daily study schedule grounded strictly in the official BISE Lahore curriculum chapters provided below.
 
-Student Input:
-- Daily Study Target: ${dailyHours} hours/day
-- Start Date: ${startDate || new Date().toISOString().split('T')[0]}
-- Subjects & Exam Details:
-${subjects.map((s: any) => `- ${s.name} (ID: ${s.subjectId}): Exam Date: ${s.examDate}, Student Confidence: ${s.confidence}/5 (1=Needs urgent help, 5=Mastered)`).join('\n')}
+Student Profile & Enrolled Syllabus:
+Target Daily Hours: ${dailyHours} hours/day
+Start Date: ${startDate || new Date().toISOString().split('T')[0]}
 
-Instructions:
-1. Allocate more time and earlier revision dates to subjects with LOW confidence (1-2) and NEARBY exam dates.
+Syllabus & Confidence Details:
+${subjectsSyllabus}
+
+Scheduling Rules:
+1. Allocate more time and earlier revision dates to subjects and chapters with LOW confidence (1-2) and NEARBY exam dates.
 2. For each day starting from today for the next 7 to 10 days, create 2 to 3 manageable study sessions (30 to 60 mins each).
-3. Select specific topics relevant to Grade 9/10 Matric curriculum for each subject.
-4. Time slots should feel like typical study blocks after school or on weekends (e.g. "16:00 - 17:00", "17:30 - 18:30", "19:00 - 20:00").
-5. Include topic names that are concise and actionable.
+3. Session topic names MUST reference real chapter numbers and titles from the student's syllabus (e.g., "Ch 10: Simple Harmonic Motion and Waves - Numericals").
+4. Time slots should reflect typical study blocks (e.g. "16:00 - 17:00", "17:30 - 18:30", "19:00 - 20:00").
 
 Return ONLY a valid JSON array matching this exact schema.
 `;
@@ -110,7 +125,7 @@ Return ONLY a valid JSON array matching this exact schema.
 // ----------------------------------------------------
 app.post('/api/chat/study-buddy', async (req, res) => {
   try {
-    const { question, subjectName, topic, history = [] } = req.body;
+    const { question, subjectId, subjectName, topic, history = [] } = req.body;
 
     if (!question) {
       return res.status(400).json({ error: 'Question is required' });
@@ -118,15 +133,30 @@ app.post('/api/chat/study-buddy', async (req, res) => {
 
     const ai = getGeminiClient();
 
+    // Pull grounded chapter knowledge
+    const subObj = subjectId ? getSubjectById(subjectId) : undefined;
+    let syllabusContext = '';
+    if (subObj) {
+      const activeChapter = subObj.chapters.find(ch => 
+        topic && (topic.includes(ch.chapter_title) || topic.includes(`Ch ${ch.chapter_number}`))
+      );
+      if (activeChapter) {
+        syllabusContext = `Official Syllabus Context for Chapter ${activeChapter.chapter_number} (${activeChapter.chapter_title}): Key Exam Topics: ${activeChapter.key_topics.join(', ')}.`;
+      } else {
+        syllabusContext = `Subject Curriculum: ${subObj.subject_name}. Key Chapters: ${subObj.chapters.map(c => `Ch ${c.chapter_number}: ${c.chapter_title}`).join('; ')}.`;
+      }
+    }
+
     const systemInstruction = `
-You are MatricMate's AI Study Buddy, a friendly, patient, and highly engaging tutor for Grade 9-10 Matric students.
-Subject context: ${subjectName || 'General Science & Math'}${topic ? ` (Topic: ${topic})` : ''}.
+You are MatricMate's AI Study Buddy, an expert tutor for BISE Lahore (PCTB/SNC framework) Matric (Grade 9-10) students.
+Subject context: ${subObj?.subject_name || subjectName || 'Matric Sciences & Math'}${topic ? ` (Topic: ${topic})` : ''}.
+${syllabusContext}
 
 Rules for your response:
-1. Explain concepts in simple, jargon-free language suitable for a high school student.
-2. Use real-world examples or relatable analogies.
-3. Keep formatting clean with bullet points, bold key terms, and concise paragraphs.
-4. Always end with a "💡 Quick Key Takeaway" box and a 1-sentence practice question to test their understanding.
+1. Explain concepts strictly aligned with BISE Lahore board exam standards and PCTB textbook definitions.
+2. Provide step-by-step solutions or explanations. Use bold key terms and clean formatting.
+3. Highlight common exam traps, mark allocation hints (e.g. method marks for formulas and unit conversion), or step-by-step calculations.
+4. End with a "💡 Quick Key Exam Takeaway" box and a 1-sentence practice question.
 `;
 
     const contents: any[] = [];
@@ -167,7 +197,7 @@ Rules for your response:
 // ----------------------------------------------------
 app.post('/api/quiz/generate', async (req, res) => {
   try {
-    const { subjectName, topic, numQuestions = 5 } = req.body;
+    const { subjectId, subjectName, topic, numQuestions = 5 } = req.body;
 
     if (!subjectName || !topic) {
       return res.status(400).json({ error: 'subjectName and topic are required' });
@@ -175,17 +205,29 @@ app.post('/api/quiz/generate', async (req, res) => {
 
     const ai = getGeminiClient();
 
+    // Pull grounded key topics from curriculum
+    const subObj = subjectId ? getSubjectById(subjectId) : undefined;
+    let groundedTopicsStr = '';
+    if (subObj) {
+      const activeChapter = subObj.chapters.find(ch => 
+        topic.includes(ch.chapter_title) || topic.includes(`Ch ${ch.chapter_number}`)
+      );
+      if (activeChapter) {
+        groundedTopicsStr = `Ground questions strictly in these official chapter key topics: ${activeChapter.key_topics.join(', ')}.`;
+      }
+    }
+
     const prompt = `
-Create an engaging, past-exam-style revision quiz for a Matric (Grade 9/10) student.
-Subject: ${subjectName}
-Topic: ${topic}
-Number of Questions: ${numQuestions}
+You are MatricMate's quiz generation engine for BISE Lahore (PCTB/SNC framework) Matric students.
+Subject: ${subObj?.subject_name || subjectName}
+Topic / Chapter: ${topic}
+${groundedTopicsStr}
 
 Instructions:
-1. Create ${numQuestions} multiple-choice questions testing core concepts, calculations, definitions, or application skills.
-2. For each question, provide 4 options (A, B, C, D).
-3. Specify the index of the correct option (0 for A, 1 for B, 2 for C, 3 for D).
-4. Provide a clear, encouraging 2-sentence explanation of why the correct option is right.
+1. Create exactly ${numQuestions} multiple-choice questions (4 options each, 1 correct index 0-3).
+2. Distribute cognitive levels according to BISE Lahore SLO taxonomy: Knowledge (40%), Understanding (40%), Application/Numericals (20%).
+3. Each question must test core concepts, formulas, definitions, or calculations from this chapter.
+4. Provide a clear 2-sentence explanation highlighting the correct answer and mark allocation rules.
 
 Return ONLY a valid JSON array matching the specified schema.
 `;
@@ -241,8 +283,8 @@ app.post('/api/schedule/reschedule-missed', async (req, res) => {
     const ai = getGeminiClient();
 
     const prompt = `
-You are MatricMate's adaptive scheduler.
-A student missed a study session or flagged weak topics in a quiz.
+You are MatricMate's adaptive scheduler for BISE Lahore Matric exams.
+A student missed a study session or flagged weak topics in a diagnostic quiz.
 
 Missed/Weak Topic: "${missedSession?.topic || weakTopics.join(', ')}" (Subject ID: ${missedSession?.subjectId || 'general'})
 Current Schedule Summary:
@@ -252,9 +294,7 @@ Exam Dates: ${JSON.stringify(examDates)}
 
 Instructions:
 1. Re-insert a new high-priority 45-minute revision session for this topic into an upcoming empty or low-load day prior to the exam date.
-2. Return an updated JSON list of sessions or the newly placed session details.
-
-Return JSON in the format: { "rescheduledSession": { "subjectId": "...", "topic": "...", "date": "YYYY-MM-DD", "timeSlot": "17:00 - 18:00", "durationMinutes": 45, "notes": "Rescheduled revision session" } }
+2. Return JSON in the format: { "rescheduledSession": { "subjectId": "...", "topic": "...", "date": "YYYY-MM-DD", "timeSlot": "17:00 - 18:00", "durationMinutes": 45, "notes": "Rescheduled revision session" } }
 `;
 
     const response = await ai.models.generateContent({
@@ -286,7 +326,7 @@ Return JSON in the format: { "rescheduledSession": { "subjectId": "...", "topic"
     const result = JSON.parse(response.text || '{}');
     const newSession = result.rescheduledSession || {
       id: `session-resched-${Date.now()}`,
-      subjectId: missedSession?.subjectId || 'math',
+      subjectId: missedSession?.subjectId || 'PHY-10',
       topic: missedSession?.topic || weakTopics[0] || 'Revision Topic',
       date: new Date(Date.now() + 86400000).toISOString().split('T')[0],
       timeSlot: '17:00 - 18:00',

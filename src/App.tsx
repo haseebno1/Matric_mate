@@ -1,13 +1,26 @@
 import React, { useState, useEffect } from 'react';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { auth } from './lib/firebase';
+import { AuthView } from './components/AuthView';
+import {
+  subscribeProfile,
+  saveProfileToFirestore,
+  subscribeSessions,
+  saveSessionsBatchToFirestore,
+  saveSessionToFirestore,
+  subscribeNotes,
+  saveNoteToFirestore,
+  deleteNoteFromFirestore,
+  subscribeChat,
+  saveChatMessageToFirestore,
+  subscribeBadges,
+  saveBadgesToFirestore,
+  subscribeQuizzes,
+  saveQuizResultToFirestore,
+} from './lib/firestoreStorage';
+
 import { ActiveTab, UserProfile, StudySession, NoteItem, ChatMessage, QuizResult, Badge } from './types';
-import { 
-  loadProfile, saveProfile, 
-  loadSessions, saveSessions, 
-  loadNotes, saveNotes, 
-  loadChatMessages, saveChatMessages, 
-  loadBadges, saveBadges, 
-  loadQuizResults, saveQuizResults 
-} from './lib/storage';
+import { loadBadges } from './lib/storage';
 
 import { Navigation } from './components/Navigation';
 import { OnboardingModal } from './components/OnboardingModal';
@@ -19,51 +32,134 @@ import { AnalyticsView } from './components/AnalyticsView';
 import { NotesView } from './components/NotesView';
 import { SettingsView } from './components/SettingsView';
 import { MATRIC_SUBJECTS } from './data/subjectsData';
-import {
-  generateFallbackSchedule,
-  generateFallbackBuddyReply,
-} from './lib/fallbackAI';
 import { generateScheduleAI, chatBuddyAI } from './lib/clientAI';
+import { Loader2 } from 'lucide-react';
 
 export default function App() {
-  const [profile, setProfile] = useState<UserProfile>(loadProfile);
-  const [sessions, setSessions] = useState<StudySession[]>(loadSessions);
-  const [notes, setNotes] = useState<NoteItem[]>(loadNotes);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(loadChatMessages);
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
+
+  const [profile, setProfile] = useState<UserProfile>({
+    id: '',
+    name: '',
+    email: '',
+    phone: '',
+    grade: 'Grade 10',
+    group: 'Science',
+    board: 'BISE Lahore',
+    dailyStudyHours: 3,
+    onboardingCompleted: false,
+    streakDays: 1,
+    lastActiveDate: new Date().toISOString().split('T')[0],
+    subjects: [],
+    badgesEarned: [],
+  });
+  const [sessions, setSessions] = useState<StudySession[]>([]);
+  const [notes, setNotes] = useState<NoteItem[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [badges, setBadges] = useState<Badge[]>(loadBadges);
-  const [quizResults, setQuizResults] = useState<QuizResult[]>(loadQuizResults);
+  const [quizResults, setQuizResults] = useState<QuizResult[]>([]);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
-  const [onboardingOpen, setOnboardingOpen] = useState<boolean>(!profile.onboardingCompleted);
+  const [onboardingOpen, setOnboardingOpen] = useState<boolean>(false);
 
-  // Sync to local storage
+  // Auth listener
   useEffect(() => {
-    saveProfile(profile);
-  }, [profile]);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
+  // Real-time Firestore subscriptions for authenticated user
   useEffect(() => {
-    saveSessions(sessions);
-  }, [sessions]);
+    if (!user) return;
+    const uid = user.uid;
 
-  useEffect(() => {
-    saveNotes(notes);
-  }, [notes]);
+    const unsubProfile = subscribeProfile(uid, (p) => {
+      const authName = user.displayName || user.email?.split('@')[0] || 'Student';
+      const authEmail = user.email || '';
+      const authPhoto = user.photoURL || undefined;
 
-  useEffect(() => {
-    saveChatMessages(chatMessages);
-  }, [chatMessages]);
+      if (p) {
+        const mergedName = p.name && p.name !== 'Student' ? p.name : (authName || p.name);
+        const mergedEmail = p.email || authEmail;
+        const mergedPhoto = p.photoUrl || authPhoto;
 
-  useEffect(() => {
-    saveBadges(badges);
-  }, [badges]);
+        const updated: UserProfile = {
+          ...p,
+          name: mergedName,
+          email: mergedEmail,
+          photoUrl: mergedPhoto,
+        };
 
-  useEffect(() => {
-    saveQuizResults(quizResults);
-  }, [quizResults]);
+        if (updated.name !== p.name || updated.email !== p.email || updated.photoUrl !== p.photoUrl) {
+          saveProfileToFirestore(uid, updated);
+        }
+
+        setProfile(updated);
+        if (!p.onboardingCompleted) {
+          setOnboardingOpen(true);
+        }
+      } else {
+        const initialProfile: UserProfile = {
+          id: uid,
+          name: authName,
+          email: authEmail,
+          photoUrl: authPhoto,
+          phone: '',
+          grade: 'Grade 10',
+          group: 'Science',
+          board: 'BISE Lahore',
+          dailyStudyHours: 3,
+          onboardingCompleted: false,
+          streakDays: 1,
+          lastActiveDate: new Date().toISOString().split('T')[0],
+          subjects: [],
+          badgesEarned: [],
+        };
+        saveProfileToFirestore(uid, initialProfile);
+        setProfile(initialProfile);
+        setOnboardingOpen(true);
+      }
+    });
+
+    const unsubSessions = subscribeSessions(uid, (data) => setSessions(data));
+    const unsubNotes = subscribeNotes(uid, (data) => setNotes(data));
+    const unsubChat = subscribeChat(uid, (data) => setChatMessages(data));
+    const unsubBadges = subscribeBadges(uid, (data) => {
+      if (data && data.length > 0) {
+        setBadges(data);
+      }
+    });
+    const unsubQuizzes = subscribeQuizzes(uid, (data) => setQuizResults(data));
+
+    return () => {
+      unsubProfile();
+      unsubSessions();
+      unsubNotes();
+      unsubChat();
+      unsubBadges();
+      unsubQuizzes();
+    };
+  }, [user]);
+
+  // Handle Logout
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.error('Logout error', e);
+    }
+  };
 
   // Handle Setup & Timetable Generation
   const handleSaveProfileAndGenerateSchedule = async (updatedProfile: UserProfile) => {
     setProfile(updatedProfile);
+    if (user) {
+      saveProfileToFirestore(user.uid, updatedProfile);
+    }
 
     // Call AI Backend to generate personalized schedule
     try {
@@ -90,6 +186,7 @@ export default function App() {
         const data = await res.json();
         if (data.schedule && data.schedule.length > 0) {
           setSessions(data.schedule);
+          if (user) saveSessionsBatchToFirestore(user.uid, data.schedule);
           return;
         }
       }
@@ -98,6 +195,7 @@ export default function App() {
       console.warn('Backend endpoint unavailable, attempting client Gemini API / fallback:', e);
       const schedule = await generateScheduleAI(updatedProfile.subjects, updatedProfile.dailyStudyHours || 3, updatedProfile.apiKey);
       setSessions(schedule);
+      if (user) saveSessionsBatchToFirestore(user.uid, schedule);
     }
   };
 
@@ -106,7 +204,9 @@ export default function App() {
     const updated = sessions.map((s) => {
       if (s.id === sessionId) {
         const newStatus: 'completed' | 'pending' = s.status === 'completed' ? 'pending' : 'completed';
-        return { ...s, status: newStatus };
+        const updatedS = { ...s, status: newStatus };
+        if (user) saveSessionToFirestore(user.uid, updatedS);
+        return updatedS;
       }
       return s;
     });
@@ -116,8 +216,10 @@ export default function App() {
     // Update streak if completing
     const completedNow = updated.find((s) => s.id === sessionId)?.status === 'completed';
     if (completedNow) {
-      const newStreak = profile.streakDays + 1;
-      setProfile({ ...profile, streakDays: newStreak });
+      const newStreak = (profile.streakDays || 0) + 1;
+      const updatedP = { ...profile, streakDays: newStreak };
+      setProfile(updatedP);
+      if (user) saveProfileToFirestore(user.uid, updatedP);
 
       // Update badge progress
       const updatedBadges = badges.map((b) => {
@@ -126,6 +228,7 @@ export default function App() {
         return b;
       });
       setBadges(updatedBadges);
+      if (user) saveBadgesToFirestore(user.uid, updatedBadges);
     }
   };
 
@@ -149,14 +252,18 @@ export default function App() {
 
       const data = await res.json();
       if (data.rescheduledSession) {
-        // Mark current as missed or updated date
         const newSession = data.rescheduledSession;
-        const updated = sessions.map((s) => (s.id === session.id ? { ...s, status: 'missed' as const } : s));
-        setSessions([newSession, ...updated]);
+        const missedSession = { ...session, status: 'missed' as const };
+        const updated = sessions.map((s) => (s.id === session.id ? missedSession : s));
+        const newSessions = [newSession, ...updated];
+        setSessions(newSessions);
+        if (user) {
+          saveSessionToFirestore(user.uid, missedSession);
+          saveSessionToFirestore(user.uid, newSession);
+        }
       }
     } catch (e) {
       console.error('Reschedule error', e);
-      // Fallback local reschedule
       const newDate = new Date();
       newDate.setDate(newDate.getDate() + 2);
       const rescheduled: StudySession = {
@@ -166,7 +273,13 @@ export default function App() {
         status: 'pending',
         notes: 'Rescheduled revision slot',
       };
-      setSessions([rescheduled, ...sessions.map((s) => (s.id === session.id ? { ...s, status: 'missed' as const } : s))]);
+      const missedSession = { ...session, status: 'missed' as const };
+      const newSessions = [rescheduled, ...sessions.map((s) => (s.id === session.id ? missedSession : s))];
+      setSessions(newSessions);
+      if (user) {
+        saveSessionToFirestore(user.uid, missedSession);
+        saveSessionToFirestore(user.uid, rescheduled);
+      }
     }
   };
 
@@ -184,6 +297,7 @@ export default function App() {
 
     const newHistory = [...chatMessages, userMsg];
     setChatMessages(newHistory);
+    if (user) saveChatMessageToFirestore(user.uid, userMsg);
 
     try {
       const res = await fetch('/api/chat/study-buddy', {
@@ -210,7 +324,10 @@ export default function App() {
             keyTakeaway: `${topic}: Master the core formula and double check unit conversions.`,
           };
           setChatMessages([...newHistory, assistantMsg]);
-          setBadges(badges.map((b) => (b.id === 'b4' ? { ...b, progress: Math.min(b.maxProgress, b.progress + 1) } : b)));
+          if (user) saveChatMessageToFirestore(user.uid, assistantMsg);
+          const updatedBadges = badges.map((b) => (b.id === 'b4' ? { ...b, progress: Math.min(b.maxProgress, b.progress + 1) } : b));
+          setBadges(updatedBadges);
+          if (user) saveBadgesToFirestore(user.uid, updatedBadges);
           return;
         }
       }
@@ -228,7 +345,10 @@ export default function App() {
         keyTakeaway: `${topic}: Show all working steps clearly in Matric exams.`,
       };
       setChatMessages([...newHistory, assistantMsg]);
-      setBadges(badges.map((b) => (b.id === 'b4' ? { ...b, progress: Math.min(b.maxProgress, b.progress + 1) } : b)));
+      if (user) saveChatMessageToFirestore(user.uid, assistantMsg);
+      const updatedBadges = badges.map((b) => (b.id === 'b4' ? { ...b, progress: Math.min(b.maxProgress, b.progress + 1) } : b));
+      setBadges(updatedBadges);
+      if (user) saveBadgesToFirestore(user.uid, updatedBadges);
     }
   };
 
@@ -240,61 +360,43 @@ export default function App() {
       createdAt: new Date().toISOString().split('T')[0],
     };
     setNotes([newNote, ...notes]);
+    if (user) saveNoteToFirestore(user.uid, newNote);
   };
 
   const handleDeleteNote = (noteId: string) => {
     setNotes(notes.filter((n) => n.id !== noteId));
+    if (user) deleteNoteFromFirestore(user.uid, noteId);
   };
 
   // Quiz Completed
   const handleQuizCompleted = (result: QuizResult) => {
     setQuizResults([result, ...quizResults]);
+    if (user) saveQuizResultToFirestore(user.uid, result);
 
     // Update Quiz badge if score >= 80%
     if (result.score / result.totalQuestions >= 0.8) {
-      setBadges(
-        badges.map((b) => (b.id === 'b3' ? { ...b, progress: 1, unlockedAt: new Date().toISOString() } : b))
-      );
+      const updatedBadges = badges.map((b) => (b.id === 'b3' ? { ...b, progress: 1, unlockedAt: new Date().toISOString() } : b));
+      setBadges(updatedBadges);
+      if (user) saveBadgesToFirestore(user.uid, updatedBadges);
     }
   };
 
   // Add Weak Topics to Schedule from Quiz
   const handleAddWeakTopicsToSchedule = async (weakTopics: string[], subjectId: string) => {
-    try {
-      const res = await fetch('/api/schedule/reschedule-missed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentSchedule: sessions,
-          weakTopics,
-          subjectId,
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.rescheduledSession) {
-          setSessions([data.rescheduledSession, ...sessions]);
-          return;
-        }
-      }
-      throw new Error('Using fallback weak topic schedule insert');
-    } catch (e) {
-      console.warn('Failed to add weak topics via API, using fallback:', e);
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const newSession: StudySession = {
-        id: `s-weak-${Date.now()}`,
-        subjectId: subjectId,
-        topic: weakTopics[0] || 'Targeted Revision',
-        date: tomorrow.toISOString().split('T')[0],
-        timeSlot: '17:00 - 18:00',
-        durationMinutes: 45,
-        notes: `Priority revision slot added after quiz review: ${weakTopics.join(', ')}`,
-        status: 'pending',
-      };
-      setSessions([newSession, ...sessions]);
-    }
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const newSession: StudySession = {
+      id: `s-weak-${Date.now()}`,
+      subjectId: subjectId,
+      topic: weakTopics[0] || 'Targeted Revision',
+      date: tomorrow.toISOString().split('T')[0],
+      timeSlot: '17:00 - 18:00',
+      durationMinutes: 45,
+      notes: `Priority revision slot added after quiz review: ${weakTopics.join(', ')}`,
+      status: 'pending',
+    };
+    setSessions([newSession, ...sessions]);
+    if (user) saveSessionToFirestore(user.uid, newSession);
   };
 
   // Reset All Data
@@ -302,6 +404,21 @@ export default function App() {
     localStorage.clear();
     window.location.reload();
   };
+
+  // Loading Screen
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 space-y-3">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+        <p className="text-sm font-bold text-slate-300">Loading MatricMate Platform...</p>
+      </div>
+    );
+  }
+
+  // Auth View if not logged in
+  if (!user) {
+    return <AuthView />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-600 selection:text-white">
@@ -311,6 +428,7 @@ export default function App() {
         setActiveTab={setActiveTab}
         profile={profile}
         onOpenOnboarding={() => setOnboardingOpen(true)}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Area */}
@@ -375,9 +493,13 @@ export default function App() {
         {activeTab === 'settings' && (
           <SettingsView
             profile={profile}
-            onSaveProfile={(p) => setProfile(p)}
+            onSaveProfile={(p) => {
+              setProfile(p);
+              if (user) saveProfileToFirestore(user.uid, p);
+            }}
             onResetAllData={handleResetAllData}
             onOpenOnboarding={() => setOnboardingOpen(true)}
+            onLogout={handleLogout}
           />
         )}
       </main>

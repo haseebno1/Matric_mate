@@ -1,0 +1,98 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "User profiles for MatricMate students",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "grade": { "type": "string" },
+        "group": { "type": "string" },
+        "board": { "type": "string" },
+        "dailyStudyHours": { "type": "number" },
+        "onboardingCompleted": { "type": "boolean" },
+        "streakDays": { "type": "number" },
+        "lastActiveDate": { "type": "string" },
+        "subjects": { "type": "array" },
+        "badgesEarned": { "type": "array" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email", "name"]
+    },
+    "users/{userId}/sessions": {
+      "title": "Study Sessions",
+      "description": "Scheduled revision and study sessions for a user",
+      "type": "object",
+      "properties": {
+        "subjectId": { "type": "string" },
+        "topic": { "type": "string" },
+        "date": { "type": "string" },
+        "timeSlot": { "type": "string" },
+        "durationMinutes": { "type": "number" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["subjectId", "topic", "date", "status"]
+    },
+    "users/{userId}/notes": {
+      "title": "Study Notes",
+      "description": "Saved notes and key takeaways for a user",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "topic": { "type": "string" },
+        "content": { "type": "string" },
+        "keyTakeaways": { "type": "array" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "subjectId", "content"]
+    },
+    "users/{userId}/quizzes": {
+      "title": "Quiz Results",
+      "description": "Completed quiz scores and weak topic diagnostics for a user",
+      "type": "object",
+      "properties": {
+        "subjectId": { "type": "string" },
+        "topic": { "type": "string" },
+        "score": { "type": "number" },
+        "totalQuestions": { "type": "number" },
+        "date": { "type": "string" },
+        "weakTopicsIdentified": { "type": "array" }
+      },
+      "required": ["subjectId", "topic", "score", "totalQuestions"]
+    },
+    "users/{userId}/chat": {
+      "title": "Chat Messages",
+      "description": "AI Study Buddy conversation history for a user",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string" },
+        "text": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "topic": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "keyTakeaway": { "type": "string" }
+      },
+      "required": ["role", "text"]
+    },
+    "users/{userId}/badges": {
+      "title": "Badges",
+      "description": "Gamification badges for a user",
+      "type": "object",
+      "properties": {
+        "badgeId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "iconName": { "type": "string" },
+        "category": { "type": "string" },
+        "progress": { "type": "number" },
+        "maxProgress": { "type": "number" },
+        "unlockedAt": { "type": "string" }
+      },
+      "required": ["badgeId", "progress", "maxProgress"]
+    }
+  }
+}

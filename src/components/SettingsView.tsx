@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
+import { updateProfile } from 'firebase/auth';
+import { auth } from '../lib/firebase';
 import { UserProfile, SubjectConfig } from '../types';
+import { getSubjectsForGradeAndGroup } from '../data/curriculumData';
 import { MATRIC_SUBJECTS } from '../data/subjectsData';
 import { setClientApiKey, getClientApiKey } from '../lib/clientAI';
 import { 
@@ -13,7 +16,10 @@ import {
   Calendar,
   Sliders,
   Key,
-  Sparkles
+  Sparkles,
+  LogOut,
+  Camera,
+  Image as ImageIcon
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -21,6 +27,13 @@ interface SettingsViewProps {
   onSaveProfile: (profile: UserProfile) => void;
   onResetAllData: () => void;
   onOpenOnboarding: () => void;
+  onLogout?: () => void;
+}
+
+function getFutureDate(daysAhead: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + daysAhead);
+  return d.toISOString().split('T')[0];
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -28,9 +41,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSaveProfile,
   onResetAllData,
   onOpenOnboarding,
+  onLogout,
 }) => {
   const [name, setName] = useState(profile.name || '');
+  const [photoUrl, setPhotoUrl] = useState(profile.photoUrl || '');
   const [grade, setGrade] = useState<'Grade 9' | 'Grade 10'>(profile.grade || 'Grade 10');
+  const [group, setGroup] = useState<'Science' | 'Computer Science' | 'Arts'>(profile.group || 'Science');
   const [email, setEmail] = useState(profile.email || '');
   const [phone, setPhone] = useState(profile.phone || '');
   const [dailyHours, setDailyHours] = useState(profile.dailyStudyHours || 3);
@@ -43,20 +59,63 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setClientApiKey(apiKey);
+    
+    // Sync with Firebase auth current user if available
+    if (auth.currentUser) {
+      try {
+        await updateProfile(auth.currentUser, {
+          displayName: name.trim() || undefined,
+          photoURL: photoUrl.trim() || undefined,
+        });
+      } catch (e) {
+        console.warn('Could not update Auth profile:', e);
+      }
+    }
+
+    const groupOrGradeChanged = group !== profile.group || grade !== profile.grade;
+
+    let updatedSubjects = profile.subjects;
+    if (groupOrGradeChanged || !profile.subjects || profile.subjects.length === 0) {
+      const list = getSubjectsForGradeAndGroup(grade, group);
+      updatedSubjects = list.map((sub, idx) => {
+        const chapterConf: Record<number, number> = {};
+        sub.chapters.forEach((ch) => {
+          chapterConf[ch.chapter_number] = 3;
+        });
+        return {
+          subjectId: sub.subject_id,
+          examDate: getFutureDate(15 + idx * 3),
+          confidence: 3,
+          chapterConfidences: chapterConf,
+        };
+      });
+    }
+
     const updated: UserProfile = {
       ...profile,
-      name,
+      name: name.trim() || 'Student',
+      photoUrl: photoUrl.trim() || undefined,
       grade,
-      email,
-      phone,
+      group,
+      board: 'BISE Lahore',
+      email: email.trim(),
+      phone: phone.trim(),
       dailyStudyHours: dailyHours,
       apiKey: apiKey.trim(),
+      subjects: updatedSubjects,
     };
+
     onSaveProfile(updated);
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
+
+    if (groupOrGradeChanged) {
+      setTimeout(() => {
+        onOpenOnboarding();
+      }, 350);
+    }
   };
 
   return (
@@ -83,21 +142,84 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       {/* Account Info Form */}
-      <div className="p-6 bg-white border border-slate-200 rounded-3xl shadow-sm space-y-4">
-        <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2 border-b border-slate-200 pb-3">
-          <User className="w-4 h-4 text-indigo-600" />
-          <span>Student Account Details</span>
-        </h3>
+      <div className="p-6 bg-white border border-slate-200 rounded-3xl shadow-sm space-y-6">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+          <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+            <User className="w-4 h-4 text-indigo-600" />
+            <span>Authenticated Student Profile Details</span>
+          </h3>
+          <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
+            Firebase Auth Synced
+          </span>
+        </div>
+
+        {/* Profile Picture Header Row */}
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row items-center gap-4">
+          <div className="relative shrink-0">
+            {photoUrl ? (
+              <img
+                src={photoUrl}
+                alt={name || 'Profile Picture'}
+                referrerPolicy="no-referrer"
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-500 shadow-xs"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-black text-2xl shadow-xs">
+                {name ? name.charAt(0).toUpperCase() : 'S'}
+              </div>
+            )}
+            <div className="absolute -bottom-1 -right-1 p-1 bg-white rounded-lg shadow border border-slate-200 text-indigo-600">
+              <Camera className="w-3.5 h-3.5" />
+            </div>
+          </div>
+
+          <div className="flex-1 space-y-1 text-center sm:text-left">
+            <h4 className="text-sm font-extrabold text-slate-900">{name || 'Student Name'}</h4>
+            <p className="text-xs text-slate-500 font-medium">{email || 'No email associated'}</p>
+            <p className="text-[11px] text-slate-400">
+              Authentication provider: Google Sign-In or Email Account
+            </p>
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name (Display Name)</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Ali Ahmed"
               className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="student@example.com"
+              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+              <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Profile Picture URL (Avatar Image)</span>
+            </label>
+            <input
+              type="url"
+              value={photoUrl}
+              onChange={(e) => setPhotoUrl(e.target.value)}
+              placeholder="https://lh3.googleusercontent.com/... or custom image URL"
+              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">
+              Populated automatically from Google Sign-In or custom URL.
+            </p>
           </div>
 
           <div>
@@ -107,19 +229,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               onChange={(e) => setGrade(e.target.value as any)}
               className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
             >
-              <option value="Grade 9">Grade 9</option>
-              <option value="Grade 10">Grade 10 (Matric Prep)</option>
+              <option value="Grade 9">Grade 9 (SSC Part I)</option>
+              <option value="Grade 10">Grade 10 (SSC Part II)</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Academic Group (BISE Lahore)</label>
+            <select
+              value={group}
+              onChange={(e) => setGroup(e.target.value as any)}
               className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-medium focus:outline-none focus:border-indigo-500"
-            />
+            >
+              <option value="Science">Science (Bio, Phy, Chem)</option>
+              <option value="Computer Science">Computer Science (CS, Phy, Chem)</option>
+              <option value="Arts">Arts (General Math & Gen Science)</option>
+            </select>
           </div>
 
           <div>
@@ -282,6 +407,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <span>Reset Data</span>
           </button>
         </div>
+
+        {onLogout && (
+          <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
+            <div>
+              <h4 className="text-xs font-bold text-slate-900">Sign Out of Firebase Account</h4>
+              <p className="text-[11px] text-slate-500 font-medium">Signed in as {profile.email || 'Student'}</p>
+            </div>
+
+            <button
+              onClick={onLogout}
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-colors shadow-xs"
+            >
+              <LogOut className="w-3.5 h-3.5 text-rose-400" />
+              <span>Log Out</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,7 +1,8 @@
 export interface SubjectConfig {
   subjectId: string;
   examDate: string; // YYYY-MM-DD
-  confidence: number; // 1-5
+  confidence: number; // 1-5 (calculated average or manual)
+  chapterConfidences?: Record<number, number>; // chapter_number -> rating (1-5)
   targetGrade?: string;
 }
 
@@ -9,8 +10,11 @@ export interface UserProfile {
   id: string;
   name: string;
   email: string;
+  photoUrl?: string;
   phone?: string;
   grade: 'Grade 9' | 'Grade 10';
+  group?: 'Science' | 'Computer Science' | 'Arts';
+  board?: string;
   subjects: SubjectConfig[];
   dailyStudyHours: number;
   onboardingCompleted: boolean;
