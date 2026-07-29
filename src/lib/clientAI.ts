@@ -81,7 +81,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
 Dates should start from today (${new Date().toISOString().split('T')[0]}). Ensure 2 to 4 sessions per day matching ${dailyHours} hours. Return JSON array ONLY.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -136,7 +136,7 @@ Student Question: "${question}"
 Provide a structured, step-by-step breakdown. Highlight common exam pitfalls or mark allocation rules. Keep explanation encouraging, clear, and focused on helping the student score maximum marks in Matric exams. Use markdown formatting.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: prompt,
     });
 
@@ -183,7 +183,7 @@ Return ONLY a valid JSON array of 5 objects with this format:
 ]`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',

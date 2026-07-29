@@ -49,7 +49,7 @@ The application leverages **Gemini AI models** to transform passive studying int
 ## 4. AI Tools & Architecture Integration
 
 ### AI Technology Stack:
-- **Core AI Engine:** Google Gemini API (`gemini-2.5-flash`) via the official `@google/genai` TypeScript SDK.
+- **Core AI Engine:** Google Gemini API (`gemini-3.6-flash`) via the official `@google/genai` TypeScript SDK.
 - **Server Architecture:** Express.js + Vite full-stack backend running Node.js runtime.
 - **Client Framework:** React 19 + TypeScript + Tailwind CSS with Lucide icons and Motion animations.
 - **Offline / Cloud Fallback Resilience:** Built-in client-side AI fallback engine that guarantees full functionality even during network or server offline states.

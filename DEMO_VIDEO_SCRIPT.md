@@ -32,7 +32,7 @@
   3. Type question: *"How do I solve by completing the square?"*
   4. Hit send and show the AI tutor generating a step-by-step breakdown with exam mark hints and key takeaways.
 * **Voiceover:**  
-  > "When students get stuck late at night, they don't have to wait for school the next morning. In the AI Study Buddy tab, students can select any subject and ask questions. Powered by Gemini 2.5 Flash, the tutor gives clear, step-by-step breakdowns, highlights where exam marks are awarded, and summarizes key formulas to remember."
+  > "When students get stuck late at night, they don't have to wait for school the next morning. In the AI Study Buddy tab, students can select any subject and ask questions. Powered by Gemini 3.6 Flash, the tutor gives clear, step-by-step breakdowns, highlights where exam marks are awarded, and summarizes key formulas to remember."
 
 ---
 
